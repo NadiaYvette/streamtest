@@ -1,0 +1,120 @@
+cabal-version: 3.0
+
+name:                   streamtest
+version:                0.0.1
+synopsis:               Stream testing module
+description:            Stream testing module.
+category:               experimental,
+copyright:              Nadia Chambers (2024) personal experimentation
+author:                 chessai from the Gay Haskell Discord Server
+maintainer:             nadia.yvette.chambers@gmail.com
+license:                CC0-1.0
+license-files:          LICENSE
+build-type:             Simple
+extra-doc-files:        ChangeLog.md
+
+Flag unexpected_thunks
+  Description:          Turn on unexpected thunks checks
+  Default:              False
+
+flag systemd
+  description:          Enable systemd support
+  default:              False
+  manual:               True
+
+common project-config
+  default-language:     Haskell2010
+  default-extensions:   BangPatterns
+                        BinaryLiterals
+                        BlockArguments
+                        ConstraintKinds
+                        CPP
+                        DataKinds
+                        DefaultSignatures
+                        DeriveAnyClass
+                        DeriveDataTypeable
+                        DeriveFoldable
+                        DeriveFunctor
+                        DeriveGeneric
+                        DeriveLift
+                        DerivingStrategies
+                        DeriveTraversable
+                        DerivingVia
+                        DoAndIfThenElse
+                        EmptyDataDecls
+                        ExistentialQuantification
+                        FlexibleContexts
+                        FlexibleInstances
+                        ForeignFunctionInterface
+                        FunctionalDependencies
+                        GADTs
+                        GeneralizedNewtypeDeriving
+                        ImportQualifiedPost
+                        InstanceSigs
+                        KindSignatures
+                        LambdaCase
+                        MagicHash
+                        -- MonadFailDesugaring
+                        MultiWayIf
+                        PackageImports
+                        PatternGuards
+                        PolyKinds
+                        MultiParamTypeClasses
+                        NamedFieldPuns
+                        OverloadedLists
+                        OverloadedStrings
+                        PartialTypeSignatures
+                        QuasiQuotes
+                        RankNTypes
+                        RecordWildCards
+                        ScopedTypeVariables
+                        StandaloneDeriving
+                        TemplateHaskell
+                        TupleSections
+                        TypeApplications
+                        TypeFamilies
+                        TypeOperators
+                        TypeSynonymInstances
+                        UnboxedTuples
+                        UnliftedFFITypes
+                        ViewPatterns
+StaticPointers
+  build-depends:        base >= 4.18
+
+  ghc-options:          -Wall
+                        -Wcompat
+                        -Wincomplete-record-updates
+                        -Wincomplete-uni-patterns
+                        -Wno-unticked-promoted-constructors
+                        -Wpartial-fields
+                        -Wredundant-constraints
+                        -Wunused-packages
+executable streamtest
+  import:               project-config
+  hs-source-dirs:       .
+  main-is:              StreamTest.hs
+  ghc-options:          -threaded
+                        -rtsopts
+                        -main-is StreamTest.main
+
+  if arch(arm)
+    ghc-options:        "-with-rtsopts=-T -I0 -A16m -N32 --disable-delayed-os-memory-return"
+  else
+    ghc-options:        "-with-rtsopts=-T -I0 -A16m -N64 --disable-delayed-os-memory-return"
+
+  -- other-modules:        StreamTest
+  -- autogen-modules:      StreamTest
+
+  build-depends:        base
+                      , comonad
+                      , contiguous
+                      , dlist
+                      , extra
+                      , monad-extras
+                      , optparse-applicative
+                      , primitive
+                      , sequence
+                      , streaming
+                      , text
+                      , transformers
+                      , vector
