@@ -163,6 +163,29 @@ cycleStreamStr'' = S.catMaybes . S.unfoldr stepStream . Sequence.fromList where
         Nothing -> pure $ Right (Nothing, t)
         Just (x, h') -> pure $ Right (Just x, t |> h')
 
+-- Relayed by edmundnoble, originally by Melissa.
+-- That's @Melissa's awesome function
+-- Melissa in turn cites it as based on some code from:
+-- Circular Programs and Self-Referential Structures, Lloyd Allison (2006)
+traverseQueue :: MonadFix m => (a -> m [a]) -> [a] -> m [a]
+traverseQueue gen start = mdo ins <- go (length start) (start ++ ins)
+                              pure ins
+  where go 0 _ = pure []
+        go n (x:xs) = do ins <- gen x
+                         ins' <- go (n - 1 + length ins) xs
+                         pure (ins ++ ins')
+        go _ [] = error "traverseQueue: queue is nil"
+
+traverseQueue' :: MonadFix m => (a -> m [a]) -> [a] -> m [a]
+traverseQueue' gen start = fmap (start ++) $ traverseQueue gen start
+
+concatTranspose :: Monad m => [Stream (Of a) m ()] -> Stream (Of a) m ()
+concatTranspose xss0 = void $ traverseQueue' go xss0
+  where
+  go xs = lift (uncons xs) >>= \case
+    Nothing -> return []
+    Just (x, xs') -> yield x >> return [xs']
+
 {-
 stepStream :: Stream (Of t) (StateT (FastTCQueue (Stream (Of t) m ()) m) m ()) () -> Stream (Of t) m ()
 stepStream :: StateT (FastTCQueue (Stream (Of t) m ())) m (Maybe t)
