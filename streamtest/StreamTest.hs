@@ -2,9 +2,15 @@ module StreamTest where
 
 import           Control.Applicative (Applicative, Alternative, (<|>))
 import           Control.Arrow (Arrow, first, second, (|||), (+++), (&&&), (***))
-import qualified Control.Monad as Monad (MonadPlus (..), forever, join, liftM, liftM2, when, zipWithM)
+import           Control.Monad (MonadPlus (..))
+import qualified Control.Monad as Monad (MonadPlus (..), forever, join, liftM, liftM2, void, when, zipWithM)
+import           Control.Monad.Fix (MonadFix (..))
+import qualified Control.Monad.Fix as Monad ()
 import           Control.Monad.Primitive (PrimMonad)
 import qualified Control.Monad.Primitive as Monad (PrimMonad (..))
+import           Control.Monad.Random.Lazy (MonadRandom (..))
+import qualified Control.Monad.Random.Lazy as Random (getRandom)
+import           Control.Monad.Trans.Free as F
 import           Control.Monad.Trans.RWS.Lazy (RWST)
 import qualified Control.Monad.Trans.RWS.Lazy
     as RWS (ask, execRWST, get, local, put, tell)
@@ -14,6 +20,9 @@ import qualified Control.Monad.Trans.Class as Monad (lift)
 
 import           Data.Foldable as Foldable (Foldable)
 import qualified Data.Foldable as Foldable (Foldable (..))
+import           Data.IntervalMap.Interval as IM (Interval (..), type Interval (..), isEmpty, upperBound)
+import           Data.IntervalMap.Lazy (IntervalMap)
+import qualified Data.IntervalMap.Lazy as IM (adjust, containing, delete, insert, null, toList)
 import qualified Data.Monoid as Monoid (mempty)
 import           Data.Primitive.Contiguous (Contiguous, ContiguousU, MutableArray, PrimArray, SmallArray)
 import qualified Data.Primitive.Contiguous as Contig (new, null, read, resize, shrink, sizeMut, write)
@@ -97,7 +106,7 @@ cycleStream'' ss = do
           loop
  
 cycleStream''' ss = do
-    v :: MutableArray _ _ <- Contig.new ssLength
+    v :: MutableArray (PrimState m) (Stream (Of t) m ()) <- Contig.new ssLength
     Monad.zipWithM (Contig.write v) [0..] ss
     (_, ws :: FastTCQueue t) <- RWS.execRWST loop v (0, ssLength)
     pure $ Foldable.toList ws
@@ -153,6 +162,40 @@ helper q = case Sequence.viewl q of
       Just (x :: t, h' :: Stream (Of t) m ()) -> do
         Monad.liftM (S.yield x >>) (helper $ t |> h')
 
+      -- tree :: IntervalMap Double (Stream (Of t) m ())
+      -- buildTree :: [(t', Interval Double)] -> IntervalMap Double t'
+      -- buildList :: [(t', Double)] -> [(t', Interval Double)]
+      -- scanStep :: (t', Interval Double) -> (t', Double) -> (t', Interval Double)
+cycleRandStr :: forall m t . MonadRandom m => [(Stream (Of t) m (), Double)] -> Stream (Of t) m ()
+cycleRandStr = \case
+  []         -> pure mempty
+  [(g, _)]   -> g
+  ss@(_:_:_) -> S.effect $ randHelper tree
+    where
+      randHelper :: (IntervalMap Double (Stream (Of t) m ())) -> m (Stream (Of t) m ())
+      randHelper t = do
+        r <- Random.getRandom
+        case IM.toList $ t `IM.containing` r of
+          [] | IM.null t -> pure mempty
+             | otherwise -> error "unexpected empty IntervalMap"
+          (i, g) : _ -> do
+            gMaybe <- S.uncons g
+            case gMaybe of
+              Nothing -> randHelper $ IM.delete i t
+              Just (x, g') ->
+                Monad.liftM (S.yield x >>)
+                  (randHelper $ IM.adjust (const g') i t)
+      (_gs, ps) = unzip ss
+      ss' = map (second (/ sum ps)) ss
+      tree = buildTree $ buildList ss'
+      buildTree = foldr (uncurry $ flip IM.insert) mempty
+      buildList [] = []
+      buildList ((o, x) : xs) = scanl scanStep (o, IntervalCO 0 x) xs
+      scanStep (_o, i) (o', x) = (o', IntervalCO a b)
+        where
+          a = IM.upperBound i
+          b = a + x
+
 cycleStreamStr'' = S.catMaybes . S.unfoldr stepStream . Sequence.fromList where
   stepStream :: FastTCQueue (Stream (Of t) m ()) -> m (Either () (Maybe t, FastTCQueue (Stream (Of t) m ())))
   stepStream q = case Sequence.viewl q of
@@ -162,6 +205,16 @@ cycleStreamStr'' = S.catMaybes . S.unfoldr stepStream . Sequence.fromList where
       case consMaybe of
         Nothing -> pure $ Right (Nothing, t)
         Just (x, h') -> pure $ Right (Just x, t |> h')
+
+-- Earlier in the discussion, mniip chimed in:
+concatTranspose' :: Monad m => [FreeT ((,) a) m ()] -> FreeT ((,) a) m ()
+concatTranspose' xss0 = go xss0 []
+  where
+    go (xs:xss) rev = Monad.lift (runFreeT xs) >>= \case
+      F.Free (x, xs') -> wrap (x, go xss (xs':rev))
+      F.Pure () -> go xss rev
+    go [] [] = pure () -- all streams exhausted
+    go [] rev = go (reverse rev) []
 
 -- Relayed by edmundnoble, originally by Melissa.
 -- That's @Melissa's awesome function
@@ -179,46 +232,20 @@ traverseQueue gen start = mdo ins <- go (length start) (start ++ ins)
 traverseQueue' :: MonadFix m => (a -> m [a]) -> [a] -> m [a]
 traverseQueue' gen start = fmap (start ++) $ traverseQueue gen start
 
-concatTranspose :: Monad m => [Stream (Of a) m ()] -> Stream (Of a) m ()
-concatTranspose xss0 = void $ traverseQueue' go xss0
+concatTranspose :: (Monad m, MonadFix (Stream (Of a) m)) => [Stream (Of a) m ()] -> Stream (Of a) m ()
+concatTranspose xss0 = Monad.void $ traverseQueue' go xss0
   where
-  go xs = lift (uncons xs) >>= \case
+  go xs = Monad.lift (S.uncons xs) >>= \case
     Nothing -> return []
-    Just (x, xs') -> yield x >> return [xs']
+    Just (x, xs') -> S.yield x >> return [xs']
 
-{-
-stepStream :: Stream (Of t) (StateT (FastTCQueue (Stream (Of t) m ()) m) m ()) () -> Stream (Of t) m ()
-stepStream :: StateT (FastTCQueue (Stream (Of t) m ())) m (Maybe t)
-stepStream = do
-  q <- State.get
-  case viewl q of
-    EmptyL -> pure Nothing
-    h :< t -> do
-      consMaybe <- Monad.lift $ S.uncons h
-      case consMaybe of
-        Nothing -> do
-          State.put t
-          stepStream
--}
-{-
-  case Sequence.viewl q of
-    EmptyL -> pure Monoid.empty
-    h :< t -> S.effect do
-      consMaybe <- S.uncons h
--}
- 
 
 instance Monad m => IsList (Stream (Of t) m ()) where
   type Item (Stream (Of t) m ()) = t
-  fromList ns = S.each ns
+  fromList = S.each
   -- This often won't be feasible with monads etc. involved.
   toList = undefined
 
-instance Monad m => IsList (Stream (Stream (Of t) m) m ()) where
-  type Item (Stream (Stream (Of t) m) m ()) = Stream (Of t) m ()
-  -- fromList = S.yields . S.each
-  -- This often won't be feasible with monads etc. involved.
-  toList = undefined
 
 stream1, stream1', stream2, stream2', stream3, stream3' :: Stream (Of Integer) IO ()
 stream1 = S.each . concat $ List.replicate 3 [1, 2, 3]

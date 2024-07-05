@@ -67,6 +67,7 @@ common project-config
                         QuasiQuotes
                         RankNTypes
                         RecordWildCards
+                        RecursiveDo
                         ScopedTypeVariables
                         StandaloneDeriving
                         TemplateHaskell
@@ -107,9 +108,13 @@ executable streamtest
 
   build-depends:        base
                       , comonad
+                      , containers
                       , contiguous
                       , dlist
                       , extra
+                      , free
+                      , IntervalMap
+                      , MonadRandom
                       , monad-extras
                       , optparse-applicative
                       , primitive
