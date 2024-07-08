@@ -2,43 +2,52 @@
 
 module StreamTest where
 
-import           Control.Arrow (second)
-import qualified Control.Monad as Monad (forever, void, unless, zipWithM_)
-import           Control.Monad.Fix (MonadFix (..))
-import qualified Control.Monad.Fix as Monad ()
-import           Control.Monad.Primitive (PrimMonad)
-import           Control.Monad.Random.Lazy (MonadRandom (..))
-import qualified Control.Monad.Random.Lazy as Random (getRandom)
-import           Control.Monad.Trans.Free as F
-import           Control.Monad.Trans.RWS.Lazy (RWST)
-import qualified Control.Monad.Trans.RWS.Lazy
-    as RWS (ask, execRWST, get, put, tell)
-import qualified Control.Monad.Trans.Class as Monad (lift)
+import           Control.Arrow                   (second)
+import qualified Control.Monad                   as Monad (forever, unless,
+                                                           void, zipWithM_)
+import           Control.Monad.Fix               (MonadFix (..))
+import qualified Control.Monad.Fix               as Monad ()
+import           Control.Monad.Primitive         (PrimMonad)
+import           Control.Monad.Random.Lazy       (MonadRandom (..))
+import qualified Control.Monad.Random.Lazy       as Random (getRandom)
+import qualified Control.Monad.Trans.Class       as Monad (lift)
+import           Control.Monad.Trans.Free        as F
+import           Control.Monad.Trans.RWS.Lazy    (RWST)
+import qualified Control.Monad.Trans.RWS.Lazy    as RWS (ask, execRWST, get,
+                                                         put, tell)
 
-import qualified Data.Foldable as Foldable (Foldable (..))
-import           Data.IntervalMap.Interval as IM (Interval (..), type Interval (..), upperBound)
-import           Data.IntervalMap.Lazy (IntervalMap)
-import qualified Data.IntervalMap.Lazy as IM (adjust, containing, delete, insert, null, toList)
-import qualified Data.Monoid as Monoid (mempty)
-import           Data.Primitive.Contiguous (MutableArray)
+import           Data.DList                      (DList (..))
+import qualified Data.DList                      as DList (cons, empty)
+import qualified Data.Foldable                   as Foldable (Foldable (..))
+import           Data.IntervalMap.Interval       as IM (type Interval (..),
+                                                        upperBound)
+import           Data.IntervalMap.Lazy           (IntervalMap)
+import qualified Data.IntervalMap.Lazy           as IM (adjust, containing,
+                                                        delete, insert, null,
+                                                        toList)
+import qualified Data.List                       as List (cycle, replicate,
+                                                          uncons)
+import qualified Data.Maybe                      as List (catMaybes)
+import qualified Data.Monoid                     as Monoid (mempty)
+import           Data.Primitive.Contiguous       (MutableArray)
 import qualified Data.Primitive.Contiguous.Class as Contig (Contiguous (..))
-import           Data.Sequence.FastCatQueue (FastTCQueue, ViewL (..), (><), (|>))
-import qualified Data.Sequence.FastCatQueue as Sequence (fromList, singleton, viewl)
-import qualified Data.Tuple.Extra as Tuple (uncurry3)
-import           Data.DList (DList (..))
-import qualified Data.DList as DList (cons, empty)
-import qualified Data.List as List (cycle, replicate, uncons)
-import qualified Data.Maybe as List (catMaybes)
-import           Data.Vector (Vector, (!))
-import           Data.Vector.Generic.Mutable (PrimState)
-import qualified Data.Vector as Vector (fromList, length)
+import           Data.Sequence.FastCatQueue      (FastTCQueue, ViewL (..), (><),
+                                                  (|>))
+import qualified Data.Sequence.FastCatQueue      as Sequence (fromList,
+                                                              singleton, viewl)
+import qualified Data.Tuple.Extra                as Tuple (uncurry3)
+import           Data.Vector                     (Vector, (!))
+import qualified Data.Vector                     as Vector (fromList, length)
+import           Data.Vector.Generic.Mutable     (PrimState)
 
-import           GHC.Exts (IsList, Item)
-import qualified GHC.Exts as IsList (fromList, toList)
+import           GHC.Exts                        (IsList, Item)
+import qualified GHC.Exts                        as IsList (fromList, toList)
 
-import           Streaming (Stream, Of(..))
-import qualified Streaming (effect)
-import qualified Streaming.Prelude as Streaming (catMaybes, each, print, uncons, unfoldr, yield)
+import qualified Streaming                       (effect)
+import           Streaming                       (Of (..), Stream)
+import qualified Streaming.Prelude               as Streaming (catMaybes, each,
+                                                               print, uncons,
+                                                               unfoldr, yield)
 
 
 concatStreams :: (Monad m, Monoid r) => [Stream (Of a) m r] -> Stream (Of a) m r
@@ -89,7 +98,7 @@ cycleStream'' ss = do
           Monad.lift $ Contig.write v k s
           RWS.put ((k + 1) `mod` n, n)
           loop
- 
+
 cycleStream''' ss = do
     v :: MutableArray (PrimState m) (Stream (Of t) m ()) <- Contig.new ssLength
     Monad.zipWithM_ (Contig.write v) [0..] ss
@@ -172,7 +181,7 @@ cycleRandStr = \case
       ss' = map (second (/ sum ps)) ss
       tree = buildTree $ buildList ss'
       buildTree = foldr (uncurry $ flip IM.insert) mempty
-      buildList [] = []
+      buildList []            = []
       buildList ((o, x) : xs) = scanl scanStep (o, IntervalOC 0 x) xs
       scanStep (_o, i) (o', x) = (o', ClosedInterval a b)
         where
@@ -186,7 +195,7 @@ cycleStreamStr'' = Streaming.catMaybes . Streaming.unfoldr stepStream . Sequence
     h :< t -> do
       consMaybe <- Streaming.uncons h
       case consMaybe of
-        Nothing -> pure $ Right (Nothing, t)
+        Nothing      -> pure $ Right (Nothing, t)
         Just (x, h') -> pure $ Right (Just x, t |> h')
 
 -- Earlier in the discussion, mniip chimed in:
