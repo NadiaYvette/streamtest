@@ -154,10 +154,6 @@ helper q = case Sequence.viewl q of
       Just (x :: t, h' :: Stream (Of t) m ()) -> do
         (Streaming.yield x >>) <$> helper (t |> h')
 
-      -- tree :: IntervalMap Double (Stream (Of t) m ())
-      -- buildTree :: [(t', Interval Double)] -> IntervalMap Double t'
-      -- buildList :: [(t', Double)] -> [(t', Interval Double)]
-      -- scanStep :: (t', Interval Double) -> (t', Double) -> (t', Interval Double)
 cycleRandStr :: forall m t . MonadRandom m => [(Stream (Of t) m (), Double)] -> Stream (Of t) m ()
 cycleRandStr = \case
   []         -> pure mempty
@@ -179,10 +175,14 @@ cycleRandStr = \case
                   randHelper (IM.adjust (const g') i t)
       (_gs, ps) = unzip ss
       ss' = map (second (/ sum ps)) ss
+      tree :: IntervalMap Double (Stream (Of t) m ())
       tree = buildTree $ buildList ss'
+      buildTree :: [(t', Interval Double)] -> IntervalMap Double t'
       buildTree = foldr (uncurry $ flip IM.insert) mempty
+      buildList :: [(t', Double)] -> [(t', Interval Double)]
       buildList []            = []
       buildList ((o, x) : xs) = scanl scanStep (o, IntervalOC 0 x) xs
+      scanStep :: (t', Interval Double) -> (t', Double) -> (t', Interval Double)
       scanStep (_o, i) (o', x) = (o', ClosedInterval a b)
         where
           a = IM.upperBound i
@@ -284,6 +284,7 @@ instance Pick DList where
 newtype PickStream r m t = PickStream { unPickStream :: Stream (Of t) m r }
 
 {-
+-- Working out how to do these instances could make sense.
 instance Functor m => Functor (PickStream r m) where
   fmap f ps = PickStream { unPickStream = fmap f $ unPickStream ps}
 
@@ -306,6 +307,8 @@ single :: Pick f => t -> f t
 single = flip unpick vacant
 
 {-
+-- Are the necessary instances for streams possible?
+-- The hope was to do something like this in the vein of cycleM.
 cycleStreamM :: [Stream (Of Integer) IO ()] -> IO (FastTCQueue Integer)
 cycleStreamM ms = Monad.liftM snd $ RWS.execRWST loop v 0 where
   v :: MVector (PrimState IO) (Stream (Of Integer) IO ())
@@ -325,12 +328,8 @@ cycleStreamM ms = Monad.liftM snd $ RWS.execRWST loop v 0 where
         RWS.put $ (k + 1) `mod` Vector.length w
 -}
 
--- Are the necessary instances for streams possible?
 cycleM :: forall m ell log a .
         (Monad m, Pick ell, Pick log, Monoid (log a)
-          -- , IsList (ell a), Item (ell a) ~ a
-          -- , IsList (log a), Item (log a) ~ a
-          -- , IsList (log a), Item (log a) ~ a
           , IsList (ell (m a)), Item (ell (m a)) ~ m a)
         => ell (m a) -> m (log a)
 cycleM ms = case pick ms of
